@@ -350,6 +350,14 @@
                 <div class="upload-subtext">CSV format: id, description (headers required)</div>
             </div>
             <input type="file" id="fileInput" accept=".csv" />
+            <div style="margin: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <label for="tokenInput" style="font-weight:500;">API Token</label>
+                <input id="tokenInput" type="password" placeholder="Paste Bearer token" style="flex: 1 1 260px; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;" />
+                <button class="btn" id="showTokenBtn" type="button">Show</button>
+            </div>
+            <div class="upload-subtext" style="margin-top: -6px;">
+                The server prints a 30-character token at startup if AUTH_TOKEN is not set. You can also set AUTH_TOKEN in environment for a fixed value.
+            </div>
             <button class="btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
                 Choose File
             </button>
@@ -398,6 +406,31 @@
         const uploadBtn = document.getElementById('uploadBtn');
         const classifyBtn = document.getElementById('classifyBtn');
         const status = document.getElementById('status');
+        const tokenInput = document.getElementById('tokenInput');
+        const showTokenBtn = document.getElementById('showTokenBtn');
+
+        // Load token from localStorage
+        try {
+            const saved = localStorage.getItem('apiToken');
+            if (saved) tokenInput.value = saved;
+        } catch (e) {}
+
+        // Persist token to localStorage
+        tokenInput.addEventListener('change', () => {
+            try { localStorage.setItem('apiToken', tokenInput.value.trim()); } catch (e) {}
+        });
+        tokenInput.addEventListener('blur', () => {
+            try { localStorage.setItem('apiToken', tokenInput.value.trim()); } catch (e) {}
+        });
+        showTokenBtn.addEventListener('click', () => {
+            if (tokenInput.type === 'password') {
+                tokenInput.type = 'text';
+                showTokenBtn.textContent = 'Hide';
+            } else {
+                tokenInput.type = 'password';
+                showTokenBtn.textContent = 'Show';
+            }
+        });
 
         // Drag and drop handlers
         uploadArea.addEventListener('dragover', (e) => {
@@ -488,6 +521,12 @@
                 return;
             }
 
+            const token = (tokenInput.value || '').trim();
+            if (!token) {
+                showStatus('Missing API token. Paste the token first.', 'error');
+                return;
+            }
+
             classifyBtn.disabled = true;
             showStatus('Classifying items... This may take a while.', 'loading');
             
@@ -516,6 +555,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token,
                     },
                     body: JSON.stringify(requestBody)
                 });
