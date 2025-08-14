@@ -8,11 +8,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "granian", extra = ["reload"] },
+    { name = "granian" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "granian", extra = ["reload"] },
     { name = "httpx" },
     { name = "pytest" },
 ]
@@ -20,11 +21,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
-    { name = "granian", extras = ["reload"], specifier = ">=2.5.0" },
+    { name = "granian", specifier = ">=2.5.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "granian", extras = ["reload"], specifier = ">=2.5.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=8.4.1" },
 ]
