@@ -35,15 +35,15 @@ class ClassificationResult(BaseModel):
         default=None,
         description="TCO link for the best suggestion if applicable (format as `https://www.abf.gov.au/tariff-classification-subsite/Pages/TariffConcessionOrders.aspx?tcn={94012000}. Note the schema removes all periods and is always 8 digits (ie the 8-digit tariff code)`), otherwise null",
     )
-    suggested_codes: List[SuggestedCode] = Field(
+    other_suggested_codes: List[SuggestedCode] = Field(
         default_factory=list,
         description="Two additional suggested HS+stat code pairs",
     )
-    schedule4_concession_text: Optional[str] = Field(
+    total_time_seconds: Optional[float] = Field(
         default=None,
-        description="If a Schedule 4 concession likely applies, include a concise text summary; otherwise null",
+        description="Total time taken for classification in seconds",
     )
-    reasoning: str = Field(..., description="Detailed reasoning for the classification")
+    reasoning: str = Field(..., description="Detailed reasoning for the classification in Markdown format")
 
 
 class ClassificationRequest(BaseModel):
@@ -75,7 +75,10 @@ async def tariff_chapter_lookup(hs_code_4_or_more: str) -> Dict[str, Any]:
     tariffs_url = f"{_CLEAR_BASE}/tariffs/chapter_flatten_tariffs?code={code}"
     notes_url = f"{_CLEAR_BASE}/chapters/by_code?code={chapter_code}"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=500, max_keepalive_connections=100),
+        timeout=30.0
+    ) as client:
         tariffs_task = client.get(tariffs_url)
         notes_task = client.get(notes_url)
         tariffs_res, notes_res = await asyncio.gather(tariffs_task, notes_task)
@@ -92,6 +95,7 @@ async def tariff_chapter_lookup(hs_code_4_or_more: str) -> Dict[str, Any]:
             notes = notes_res.json()
     except (ValueError, httpx.HTTPError):
         notes = None
+    print(f'Agent called tariff_chapter_lookup for {code}')
 
     return {"rawData": raw, "chapterNotes": notes}
 
@@ -103,10 +107,13 @@ async def tariff_search(hs_code_2_to_8: str) -> List[Dict[str, Any]]:
     code = hs_code_2_to_8.strip()
     if not code.isdigit() or not (2 <= len(code) <= 8):
         return []
-
+    print(f'Agent called tariff_search for {code}')
     url = f"{_CLEAR_BASE}/tariffs/chapter_flatten_tariffs?code={code}"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=500, max_keepalive_connections=100),
+        timeout=30.0
+    ) as client:
             res = await client.get(url)
             if res.status_code != 200:
                 return []
@@ -123,18 +130,19 @@ async def tariff_concession_lookup(bylaw_number: str) -> Dict[str, Any]:
     num = bylaw_number.strip()
     if not num.isdigit():
         return {"results": [], "content": "invalid by-law number"}
-
+    print(f'Agent called tariff_concession_lookup for {num}')
     url = (
         "https://api.clear.ai/api/v1/au_tariff/book_nodes/search"
         f"?term={num}&book_ref=AU_TARIFF_SCHED4_2022"
     )
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=500, max_keepalive_connections=100),
+        timeout=30.0
+    ) as client:
             res = await client.get(url)
             if res.status_code != 200:
                 return {"results": []}
             return res.json()
     except (httpx.HTTPError, ValueError):
         return {"results": []}
-
-

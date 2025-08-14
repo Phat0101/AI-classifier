@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import List
 
@@ -46,7 +47,6 @@ class LLMClassificationOutput(BaseModel):
     best_suggested_stat_code: str
     best_suggested_tco_link: Optional[str] = None
     suggested_codes: List[SuggestedCode]
-    schedule4_concession_text: Optional[str] = None
     reasoning: str
 
 
@@ -62,7 +62,7 @@ You are an Australian tariff classification expert. You have access to tools:
 - tariff_search(hs_code: string[2-8 digits]) → verifies and fetches details for a specific 2-8 digit HS code
 - tariff_concession_lookup(bylaw_number: numeric string) → returns Schedule 4 concession details by by-law
 
-Follow this STRICT classification process without asking follow-up questions (single API call):
+Follow this STRICT classification process without asking follow-up questions:
 1) Product Analysis
    - Extract and list key characteristics from the user's description: material, form, function, use, species/type, etc.
    - Keep it brief but complete.
@@ -148,24 +148,70 @@ def _get_or_create_agent():
         return _classifier_agent
 
 
-async def _run_llm_with_pydantic_ai(user_text: str) -> LLMClassificationOutput:
+async def _run_llm_with_pydantic_ai(user_text: str) -> tuple[LLMClassificationOutput, dict]:
     agent = _get_or_create_agent()
     result = await agent.run(user_text)
-    # pydantic-ai 0.2.x returns a RunResult with .output
-    return result.output
+    usage_info = result.usage()
 
-_CLASSIFY_SEMAPHORE = asyncio.Semaphore(int(os.getenv("CLASSIFY_MAX_CONCURRENCY", "8")))
+    # PydanticAI Usage dataclass has request_tokens, response_tokens, total_tokens
+    if usage_info:
+        return result.output, {
+            "input_tokens": getattr(usage_info, 'request_tokens', 0),
+            "output_tokens": getattr(usage_info, 'response_tokens', 0),
+            "total_tokens": getattr(usage_info, 'total_tokens', 0),
+        }
+    else:
+        return result.output, {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
 
-async def _classify_single_item(item: Item) -> ClassificationResult:
+_CLASSIFY_SEMAPHORE = asyncio.Semaphore(int(os.getenv("CLASSIFY_MAX_CONCURRENCY", "100")))
+_MAX_RETRIES = int(os.getenv("CLASSIFY_MAX_RETRIES", "3"))
+_RETRY_BACKOFF_SECS = float(os.getenv("CLASSIFY_RETRY_BACKOFF", "0.5"))
+
+async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]:
     """Classify a single item using the LLM agent with structured output."""
+    start_time = time.time()
+
     prompt = (
         "Classify the following item description. Return a JSON object with keys: "
         "best_suggested_hs_code, best_suggested_stat_code, suggested_codes (array of 2 with hs_code, stat_code), reasoning.\n\n"
         f"Description: {item.description}"
     )
 
+    print(f'Classifying item: {item.description}')
     async with _CLASSIFY_SEMAPHORE:
-        llm_out = await _run_llm_with_pydantic_ai(prompt)
+        llm_out = None
+        usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                llm_out, usage = await _run_llm_with_pydantic_ai(prompt)
+                break
+            except Exception as exc:  # avoid failing batch
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(_RETRY_BACKOFF_SECS * (2 ** (attempt - 1)))
+                    continue
+                else:
+                    # Will fall back to default values below
+                    pass
+
+    total_time = time.time() - start_time
+
+    # If all attempts failed, build a safe default structured output
+    if llm_out is None:
+        llm_out = LLMClassificationOutput(
+            best_suggested_hs_code="00000000",
+            best_suggested_stat_code="00",
+            suggested_codes=[
+                SuggestedCode(hs_code="00000000", stat_code="00"),
+                SuggestedCode(hs_code="00000000", stat_code="00"),
+            ],
+            reasoning=f"Classification failed after {_MAX_RETRIES} attempts: {type(last_exc).__name__ if last_exc else 'UnknownError'}",
+        )
 
     # Normalize the suggested list to exactly 2 items
     suggestions = list(llm_out.suggested_codes or [])
@@ -200,21 +246,37 @@ async def _classify_single_item(item: Item) -> ClassificationResult:
         for sc in suggestions
     ]
 
-    return ClassificationResult(
+    print(f'Classification completed for item {item.id} in {total_time:.2f} seconds')
+
+    result = ClassificationResult(
         id=item.id,
         description=item.description,
         best_suggested_hs_code=normalized_best_hs,
         best_suggested_stat_code=normalized_best_stat,
-        best_suggested_tco_link=llm_out.best_suggested_tco_link,
-        suggested_codes=normalized_suggestions,
-        schedule4_concession_text=llm_out.schedule4_concession_text,
+        best_suggested_tco_link=getattr(llm_out, "best_suggested_tco_link", None),
+        other_suggested_codes=normalized_suggestions,
+        total_time_seconds=total_time,
         reasoning=llm_out.reasoning or "",
     )
 
+    return result, usage
 
-async def _classify_items_concurrently(items: List[Item]) -> List[ClassificationResult]:
+
+async def _classify_items_concurrently(items: List[Item]) -> tuple[List[ClassificationResult], dict]:
     tasks = [_classify_single_item(it) for it in items]
-    return await asyncio.gather(*tasks)
+    results_with_usage = await asyncio.gather(*tasks)
+
+    # Separate results and usage
+    results = []
+    total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    for result, usage in results_with_usage:
+        results.append(result)
+        total_usage["input_tokens"] += usage["input_tokens"]
+        total_usage["output_tokens"] += usage["output_tokens"]
+        total_usage["total_tokens"] += usage["total_tokens"]
+
+    return results, total_usage
 
 
 router = APIRouter()
@@ -224,5 +286,14 @@ router = APIRouter()
 async def classify_au(request: ClassificationRequest) -> ClassificationResponse:
     if not request.items:
         raise HTTPException(status_code=400, detail="No items provided")
-    results = await _classify_items_concurrently(request.items)
+
+    start_time = time.time()
+    print(f'Starting classification batch of {len(request.items)} items')
+
+    results, total_usage = await _classify_items_concurrently(request.items)
+
+    total_batch_time = time.time() - start_time
+    print(f'Batch classification completed in {total_batch_time:.2f} seconds for {len(request.items)} items')
+    print(f'Total token usage - Input: {total_usage["input_tokens"]:,}, Output: {total_usage["output_tokens"]:,}, Total: {total_usage["total_tokens"]:,}')
+
     return ClassificationResponse(results=results)
