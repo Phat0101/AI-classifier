@@ -1,6 +1,12 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env from project root explicitly
+_ROOT_DOTENV = Path(__file__).resolve().parents[2] / '.env'
+load_dotenv(dotenv_path=_ROOT_DOTENV, override=False)
 
 # Get environment variables
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -39,12 +45,7 @@ async def health_check():
 async def read_item(item_id: int, q: str = None):
     return {"item_id": item_id, "q": q}
 
-# Add your AI classification endpoints here
-@app.post("/classify")
-async def classify_item(item: dict):
-    # Your classification logic here
-    return {
-        "item": item,
-        "classification": "example",
-        "confidence": 0.95
-    }
+# Mount AU classifier routes
+from .au.classifier import router as au_router
+
+app.include_router(au_router)

@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+from typing import List
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import threading
+
+from ai_classifier.au.tools import (
+    Item,
+    SuggestedCode,
+    ClassificationResult,
+    ClassificationRequest,
+    ClassificationResponse,
+    tariff_chapter_lookup,
+    tariff_search,
+    tariff_concession_lookup,
+)
+
+
+# -----------------------------
+# Load Schedule 4 info once
+# -----------------------------
+
+_SCHEDULE4_TEXT: str = ""
+_SCHEDULE4_PATH = Path(__file__).with_name("schedule4_info.txt")
+try:
+    _SCHEDULE4_TEXT = _SCHEDULE4_PATH.read_text(encoding="utf-8")
+except OSError:
+    _SCHEDULE4_TEXT = "Schedule 4 information unavailable."
+
+
+# -----------------------------
+# Pydantic models for LLM output
+# -----------------------------
+
+
+class LLMClassificationOutput(BaseModel):
+    """Structured output returned by the LLM for a single item."""
+
+    best_suggested_hs_code: str
+    best_suggested_stat_code: str
+    best_suggested_tco_link: Optional[str] = None
+    suggested_codes: List[SuggestedCode]
+    schedule4_concession_text: Optional[str] = None
+    reasoning: str
+
+
+# -----------------------------
+# LLM agent (PydanticAI + Gemini)
+# -----------------------------
+
+
+_SYSTEM_PROMPT = (
+    """
+You are an Australian tariff classification expert. You have access to tools:
+- tariff_chapter_lookup(hs_code: string[4+ digits]) → returns chapter_flatten_tariffs data and chapter notes for a 4+ digit code
+- tariff_search(hs_code: string[2-8 digits]) → verifies and fetches details for a specific 2-8 digit HS code
+- tariff_concession_lookup(bylaw_number: numeric string) → returns Schedule 4 concession details by by-law
+
+Follow this STRICT classification process without asking follow-up questions (single API call):
+1) Product Analysis
+   - Extract and list key characteristics from the user's description: material, form, function, use, species/type, etc.
+   - Keep it brief but complete.
+
+2) Shortlist Tariff Chapters
+   - Identify up to three 6-digit candidate chapters (or fewer if highly confident).
+   - For each candidate, determine the corresponding 4-digit heading (the first 4 digits).
+   - You MUST run tariff_chapter_lookup for each shortlisted 4-digit heading.
+
+3) Look Up Tariff Codes
+   - From each chapter lookup's rawData + chapterNotes, shortlist the most relevant 8-digit codes.
+   - Use tariff_search only if you need to validate 6-8 digit codes explicitly.
+   - When chapter results contain a field indicating tariff concession orders (e.g. "tariff_orders": true), set the TCO link using this schema:
+     https://www.abf.gov.au/tariff-classification-subsite/Pages/TariffConcessionOrders.aspx?tcn={8-digit-number-without-dots}
+     - Example: 94012000 → https://www.abf.gov.au/tariff-classification-subsite/Pages/TariffConcessionOrders.aspx?tcn=94012000
+
+4) Check Schedule 4 Concessions (if applicable)
+   - Use your embedded reference below to determine if a Schedule 4 concession likely applies.
+   - Only call tariff_concession_lookup when you can infer a specific by-law number from the reference.
+   - Schedule 4 is separate from the base tariff classification; do not mix concession conditions with HS/stat code selection.
+
+5) Recommended Classifications (structured output)
+   - Choose exactly 1 best suggestion (8-digit HS + 2-digit stat code), and two additional alternatives (total 3 codes).
+   - Include TCO links if and only if the chapter/search data indicates a TCO is available; otherwise use null.
+   - JSON schema you must satisfy:
+     {{
+       "best_suggested_hs_code": string(8 digits),
+       "best_suggested_stat_code": string(2 digits),
+       "best_suggested_tco_link": string | null,
+       "suggested_codes": [
+         {{"hs_code": string(8 digits), "stat_code": string(2 digits), "tco_link": string | null}},
+         {{"hs_code": string(8 digits), "stat_code": string(2 digits), "tco_link": string | null}}
+       ],
+       "reasoning": string
+     }}
+
+Important constraints:
+- HS codes must be 8 digits without dots. Statistical codes must be 2 digits.
+- Use the lookup tool results and chapter notes to justify your selection.
+- Do not ask questions or await confirmation.
+- Do not include extra keys not in the schema.
+"""
+    + "\n\nSchedule 4 reference:\n"
+    + _SCHEDULE4_TEXT
+)
+
+
+_agent_lock = threading.Lock()
+_classifier_agent = None
+
+
+def _get_or_create_agent():
+    """Create or return a cached PydanticAI Agent for Gemini 2.5 Pro."""
+    global _classifier_agent
+    if _classifier_agent is not None:
+        return _classifier_agent
+
+    with _agent_lock:
+        if _classifier_agent is not None:
+            return _classifier_agent
+
+        from pydantic_ai import Agent
+        from pydantic_ai.models.gemini import GeminiModel, ThinkingConfig
+        from pydantic_ai.providers.google_gla import GoogleGLAProvider
+
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required")
+
+        model = GeminiModel(
+            "gemini-2.5-pro",
+            provider=GoogleGLAProvider(api_key=api_key),
+        )
+
+        _classifier_agent = Agent(
+            model=model,
+            system_prompt=_SYSTEM_PROMPT,
+            output_type=LLMClassificationOutput,
+            tools=[tariff_chapter_lookup, tariff_search, tariff_concession_lookup],
+            retries=2,
+            model_settings={"gemini_thinking_config": ThinkingConfig(thinking_budget=3000)},
+        )
+        return _classifier_agent
+
+
+async def _run_llm_with_pydantic_ai(user_text: str) -> LLMClassificationOutput:
+    agent = _get_or_create_agent()
+    result = await agent.run(user_text)
+    # pydantic-ai 0.2.x returns a RunResult with .output
+    return result.output
+
+_CLASSIFY_SEMAPHORE = asyncio.Semaphore(int(os.getenv("CLASSIFY_MAX_CONCURRENCY", "8")))
+
+async def _classify_single_item(item: Item) -> ClassificationResult:
+    """Classify a single item using the LLM agent with structured output."""
+    prompt = (
+        "Classify the following item description. Return a JSON object with keys: "
+        "best_suggested_hs_code, best_suggested_stat_code, suggested_codes (array of 2 with hs_code, stat_code), reasoning.\n\n"
+        f"Description: {item.description}"
+    )
+
+    async with _CLASSIFY_SEMAPHORE:
+        llm_out = await _run_llm_with_pydantic_ai(prompt)
+
+    # Normalize the suggested list to exactly 2 items
+    suggestions = list(llm_out.suggested_codes or [])
+    if len(suggestions) < 2:
+        # Pad with duplicates of best or zeros
+        while len(suggestions) < 2:
+            suggestions.append(
+                SuggestedCode(
+                    hs_code=(llm_out.best_suggested_hs_code or "00000000")[:8].ljust(8, "0"),
+                    stat_code=(llm_out.best_suggested_stat_code or "00")[:2].ljust(2, "0"),
+                )
+            )
+    else:
+        suggestions = suggestions[:2]
+
+    # Normalize codes
+    def _digits_only(s: str) -> str:
+        return "".join(ch for ch in s if ch.isdigit())
+
+    def _normalize_hs(code: str) -> str:
+        d = _digits_only(code)
+        return (d + "00000000")[:8] if d else "00000000"
+
+    def _normalize_stat(code: str) -> str:
+        d = _digits_only(code)
+        return (d + "00")[:2] if d else "00"
+
+    normalized_best_hs = _normalize_hs(llm_out.best_suggested_hs_code or "")
+    normalized_best_stat = _normalize_stat(llm_out.best_suggested_stat_code or "")
+    normalized_suggestions = [
+        SuggestedCode(hs_code=_normalize_hs(sc.hs_code), stat_code=_normalize_stat(sc.stat_code))
+        for sc in suggestions
+    ]
+
+    return ClassificationResult(
+        id=item.id,
+        description=item.description,
+        best_suggested_hs_code=normalized_best_hs,
+        best_suggested_stat_code=normalized_best_stat,
+        best_suggested_tco_link=llm_out.best_suggested_tco_link,
+        suggested_codes=normalized_suggestions,
+        schedule4_concession_text=llm_out.schedule4_concession_text,
+        reasoning=llm_out.reasoning or "",
+    )
+
+
+async def _classify_items_concurrently(items: List[Item]) -> List[ClassificationResult]:
+    tasks = [_classify_single_item(it) for it in items]
+    return await asyncio.gather(*tasks)
+
+
+router = APIRouter()
+
+
+@router.post("/classify/au", response_model=ClassificationResponse)
+async def classify_au(request: ClassificationRequest) -> ClassificationResponse:
+    if not request.items:
+        raise HTTPException(status_code=400, detail="No items provided")
+    results = await _classify_items_concurrently(request.items)
+    return ClassificationResponse(results=results)
