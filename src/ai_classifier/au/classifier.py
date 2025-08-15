@@ -175,13 +175,15 @@ async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]
     """Classify a single item using the LLM agent with structured output."""
     start_time = time.time()
 
+    # Merge supplier_name into the description context for better classification when provided
+    supplier_prefix = f"Supplier: {item.supplier_name}. " if getattr(item, "supplier_name", None) else ""
     prompt = (
         "Classify the following item description. Return a JSON object with keys: "
         "best_suggested_hs_code, best_suggested_stat_code, suggested_codes (array of 2 with hs_code, stat_code), reasoning.\n\n"
-        f"Description: {item.description}"
+        f"{supplier_prefix}Description: {item.description}"
     )
 
-    print(f'Classifying item: {item.description}')
+    print(f'Classifying item: {item.description} (Supplier: {item.supplier_name})')
     async with _CLASSIFY_SEMAPHORE:
         llm_out = None
         usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
@@ -251,6 +253,7 @@ async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]
     result = ClassificationResult(
         id=item.id,
         description=item.description,
+        supplier_name=getattr(item, "supplier_name", None),
         best_suggested_hs_code=normalized_best_hs,
         best_suggested_stat_code=normalized_best_stat,
         best_suggested_tco_link=getattr(llm_out, "best_suggested_tco_link", None),

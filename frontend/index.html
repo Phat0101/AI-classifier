@@ -540,7 +540,8 @@
                 const requestBody = {
                     items: uploadedData.map(item => ({
                         id: item.id,
-                        description: item.description
+                        description: item.description,
+                        supplier_name: item.supplier_name || undefined
                     }))
                 };
 

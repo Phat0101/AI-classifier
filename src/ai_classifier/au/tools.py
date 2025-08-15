@@ -15,6 +15,10 @@ import httpx
 class Item(BaseModel):
     id: str = Field(..., description="Item identifier")
     description: str = Field(..., description="Free-text item description")
+    supplier_name: Optional[str] = Field(
+        default=None,
+        description="Optional supplier/manufacturer/brand name for additional context",
+    )
 
 
 class SuggestedCode(BaseModel):
@@ -29,6 +33,10 @@ class SuggestedCode(BaseModel):
 class ClassificationResult(BaseModel):
     id: str
     description: str
+    supplier_name: Optional[str] = Field(
+        default=None,
+        description="Echoed supplier name when provided in the request",
+    )
     best_suggested_hs_code: str
     best_suggested_stat_code: str
     best_suggested_tco_link: Optional[str] = Field(
