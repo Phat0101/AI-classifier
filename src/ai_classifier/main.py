@@ -1,7 +1,9 @@
 import os
 import secrets
 import string
+import time
 from pathlib import Path
+from threading import Lock as ThreadLock
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -104,35 +106,131 @@ _EXEMPT_PREFIXES = [
 ]
 
 
-async def _auth_dispatch(request: Request, call_next):
+# -----------------------------
+# Simple IP rate limiting (fixed window)
+# -----------------------------
+
+RATE_LIMIT_ENABLED = (os.getenv("RATE_LIMIT_ENABLED") or "true").lower() == "true"
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "100"))  # per window
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+TRUST_PROXY = (os.getenv("TRUST_PROXY") or "false").lower() == "true"
+
+_RL_EXEMPT_PATHS = {"/health"}
+_RL_EXEMPT_PREFIXES = ["/static/"]
+
+_rate_limit_counters: dict[str, tuple[int, int]] = {}
+_rate_limit_lock = ThreadLock()
+
+
+def _get_client_ip(request: Request) -> str:
+    if TRUST_PROXY:
+        fwd = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        if fwd:
+            return fwd.split(",")[0].strip()
+    client = request.client
+    return client.host if client else "unknown"
+
+
+async def _rate_limit_check(request: Request):
+    if not RATE_LIMIT_ENABLED:
+        return None
+
+    path = request.url.path
+    if path in _RL_EXEMPT_PATHS or any(path.startswith(p) for p in _RL_EXEMPT_PREFIXES):
+        return None
+
+    ip = _get_client_ip(request)
+    now = int(time.time())
+    window_start = (now // RATE_LIMIT_WINDOW_SECONDS) * RATE_LIMIT_WINDOW_SECONDS
+
+    with _rate_limit_lock:
+        prev = _rate_limit_counters.get(ip)
+        if not prev or prev[0] != window_start:
+            count = 1
+            _rate_limit_counters[ip] = (window_start, count)
+        else:
+            count = prev[1] + 1
+            _rate_limit_counters[ip] = (window_start, count)
+
+    over_limit = count > RATE_LIMIT_MAX_REQUESTS
+    remaining = max(RATE_LIMIT_MAX_REQUESTS - count, 0)
+
+    if over_limit:
+        retry_after = window_start + RATE_LIMIT_WINDOW_SECONDS - now
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too Many Requests"},
+            headers={
+                "Retry-After": str(max(retry_after, 1)),
+                "X-RateLimit-Limit": str(RATE_LIMIT_MAX_REQUESTS),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+
+    # Attach rate limit headers for visibility
+    request.state.rate_limit_headers = {
+        "X-RateLimit-Limit": str(RATE_LIMIT_MAX_REQUESTS),
+        "X-RateLimit-Remaining": str(remaining),
+    }
+    return None
+
+
+async def _security_dispatch(request: Request, call_next):
     # Allow CORS preflight without auth
     if request.method == "OPTIONS":
         return await call_next(request)
 
+    # Rate limiting first
+    rate_limit_response = await _rate_limit_check(request)
+    if rate_limit_response is not None:
+        return rate_limit_response
+
     path = request.url.path
     if path in _EXEMPT_PATHS or any(path.startswith(pfx) for pfx in _EXEMPT_PREFIXES):
-        return await call_next(request)
+        response = await call_next(request)
+        # propagate rate-limit headers if present
+        rl_headers = getattr(request.state, "rate_limit_headers", None)
+        if rl_headers:
+            for k, v in rl_headers.items():
+                response.headers[k] = v
+        return response
 
     auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth_header or not auth_header.lower().startswith("bearer "):
-        return JSONResponse(
+        resp = JSONResponse(
             status_code=401,
             content={"detail": "Unauthorized: missing Bearer token"},
             headers={"WWW-Authenticate": "Bearer realm=api"},
         )
+        # Add rate-limit headers on errors too
+        rl_headers = getattr(request.state, "rate_limit_headers", None)
+        if rl_headers:
+            for k, v in rl_headers.items():
+                resp.headers[k] = v
+        return resp
 
     token = auth_header.split(" ", 1)[1].strip()
     if token != AUTH_TOKEN:
-        return JSONResponse(
+        resp = JSONResponse(
             status_code=401,
             content={"detail": "Unauthorized: invalid token"},
             headers={"WWW-Authenticate": "Bearer error=invalid_token"},
         )
+        rl_headers = getattr(request.state, "rate_limit_headers", None)
+        if rl_headers:
+            for k, v in rl_headers.items():
+                resp.headers[k] = v
+        return resp
 
-    return await call_next(request)
+    response = await call_next(request)
+    rl_headers = getattr(request.state, "rate_limit_headers", None)
+    if rl_headers:
+        for k, v in rl_headers.items():
+            response.headers[k] = v
+    return response
 
 
-app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_dispatch)
+app.add_middleware(BaseHTTPMiddleware, dispatch=_security_dispatch)
 
 # -----------------------------
 # Docs routes (Swagger UI and ReDoc)
