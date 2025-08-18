@@ -246,6 +246,20 @@
             text-align: center;
         }
 
+        .supplier-badge {
+            background: #e7f5ff;
+            color: #0b7285;
+            border: 1px solid #cfe8f3;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            display: inline-block;
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .tco-link {
             color: #007bff;
             text-decoration: none;
@@ -281,6 +295,17 @@
             height: 20px;
             animation: spin 1s linear infinite;
             margin: 0 auto;
+        }
+
+        .cell-spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #adb5bd;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
         }
 
         @keyframes spin {
@@ -347,7 +372,7 @@
         <div class="upload-section">
             <div class="upload-area" id="uploadArea">
                 <div class="upload-text">Drop your CSV file here or click to browse</div>
-                <div class="upload-subtext">CSV format: id, description (headers required)</div>
+                <div class="upload-subtext">CSV format: id, description[, supplier_name] (supplier_name optional)</div>
             </div>
             <input type="file" id="fileInput" accept=".csv" />
             <div style="margin: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -376,6 +401,7 @@
                         <tr>
                             <th>ID</th>
                             <th>Description</th>
+                            <th>Supplier</th>
                             <th>Best HS Code</th>
                             <th>Best Stat Code</th>
                             <th>TCO Link</th>
@@ -484,6 +510,7 @@
 
                     showStatus(`Successfully loaded ${uploadedData.length} items from CSV`, 'success');
                     classifyBtn.disabled = false;
+                    displayInitialTable();
                     
                 } catch (error) {
                     showStatus('Error parsing CSV file: ' + error.message, 'error');
@@ -533,12 +560,15 @@
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
 
+            // Show loading indicators in the table and summary only when classification starts
+            showLoadingIndicators();
+
             try {
                 const requestBody = {
                     items: uploadedData.map(item => ({
                         id: item.id,
                         description: item.description,
-                        supplier_name: item.supplier_name || undefined
+                        supplier_name: item.supplier_name || item.supplier || item['supplier name'] || undefined
                     }))
                 };
 
@@ -578,6 +608,8 @@
             } catch (error) {
                 showStatus('Error during classification: ' + error.message, 'error');
                 progressBar.style.display = 'none';
+                // Revert to initial table with blanks
+                if (uploadedData.length > 0) displayInitialTable();
             } finally {
                 classifyBtn.disabled = false;
             }
@@ -596,7 +628,7 @@
 
             // Calculate summary statistics
             const totalItems = classificationResults.length;
-            const avgTime = classificationResults.reduce((sum, r) => sum + (r.total_time_seconds || 0), 0) / totalItems;
+            const avgTime = totalItems ? (classificationResults.reduce((sum, r) => sum + (r.total_time_seconds || 0), 0) / totalItems) : 0;
             const tcoCount = classificationResults.filter(r => r.best_suggested_tco_link).length;
 
             // Display summary
@@ -615,11 +647,17 @@
                 </div>
             `;
 
+            // Build a quick lookup from id -> supplier name from the uploaded CSV
+            const idToSupplier = new Map(uploadedData.map(item => [String(item.id), item.supplier_name || item.supplier || item['supplier name'] || '']));
+
             // Display results table
-            resultsBody.innerHTML = classificationResults.map(result => `
+            resultsBody.innerHTML = classificationResults.map(result => {
+                const supplier = result.supplier_name || idToSupplier.get(String(result.id)) || '';
+                return `
                 <tr>
                     <td class="item-id">${result.id}</td>
                     <td class="description" title="${result.description}">${result.description}</td>
+                    <td class="supplier">${supplier ? `<span class="supplier-badge">${supplier}</span>` : '-'}</td>
                     <td><span class="code">${result.best_suggested_hs_code}</span></td>
                     <td><span class="code">${result.best_suggested_stat_code}</span></td>
                     <td>
@@ -629,12 +667,56 @@
                         }
                     </td>
                     <td class="other-codes">
-                        ${result.other_suggested_codes.map(code => 
+                        ${(result.other_suggested_codes || []).map(code => 
                             `<div><span class="code">${code.hs_code}</span>/<span class="code">${code.stat_code}</span>${code.tco_link ? ` <a href="${code.tco_link}" target="_blank" class="tco-link">TCO</a>` : ''}</div>`
                         ).join('')}
                     </td>
                     <td><span class="time-badge">${(result.total_time_seconds || 0).toFixed(1)}s</span></td>
                     <td class="reasoning">${result.reasoning || '-'}</td>
+                </tr>`;
+            }).join('');
+
+            resultsSection.style.display = 'block';
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function displayInitialTable() {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsSummary = document.getElementById('resultsSummary');
+            const resultsBody = document.getElementById('resultsBody');
+
+            // Summary with placeholders (no spinners until classify starts)
+            const totalItems = uploadedData.length;
+            resultsSummary.innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-number">${totalItems}</span>
+                    <span class="summary-label">Total Items</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-number">-</span>
+                    <span class="summary-label">Avg Time</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-number">-</span>
+                    <span class="summary-label">TCO Available</span>
+                </div>
+            `;
+
+            // Supplier lookup
+            const idToSupplier = new Map(uploadedData.map(item => [String(item.id), item.supplier_name || item.supplier || item['supplier name'] || '']));
+
+            // Initial rows with blanks in result columns
+            resultsBody.innerHTML = uploadedData.map(item => `
+                <tr data-id="${String(item.id)}">
+                    <td class="item-id">${item.id}</td>
+                    <td class="description" title="${item.description}">${item.description}</td>
+                    <td class="supplier">${(idToSupplier.get(String(item.id)) || '') ? `<span class="supplier-badge">${idToSupplier.get(String(item.id))}</span>` : '-'}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td class="reasoning">-</td>
                 </tr>
             `).join('');
 
@@ -647,22 +729,28 @@
 
             // Convert results to CSV
             const headers = [
-                'id', 'description', 'best_suggested_hs_code', 'best_suggested_stat_code',
+                'id', 'description', 'supplier_name', 'best_suggested_hs_code', 'best_suggested_stat_code',
                 'best_suggested_tco_link', 'other_codes', 'total_time_seconds', 'reasoning'
             ];
 
+            const idToSupplier = new Map(uploadedData.map(item => [String(item.id), item.supplier_name || item.supplier || item['supplier name'] || '']));
+
             const csvContent = [
                 headers.join(','),
-                ...classificationResults.map(result => [
-                    result.id,
-                    `"${result.description.replace(/"/g, '""')}"`,
-                    result.best_suggested_hs_code,
-                    result.best_suggested_stat_code,
-                    result.best_suggested_tco_link || '',
-                    `"${result.other_suggested_codes.map(c => `${c.hs_code}/${c.stat_code}`).join('; ')}"`,
-                    result.total_time_seconds || '',
-                    `"${(result.reasoning || '').replace(/"/g, '""')}"`
-                ].join(','))
+                ...classificationResults.map(result => {
+                    const supplier = result.supplier_name || idToSupplier.get(String(result.id)) || '';
+                    return [
+                        result.id,
+                        `"${result.description.replace(/"/g, '""')}"`,
+                        `"${supplier.replace(/"/g, '""')}"`,
+                        result.best_suggested_hs_code,
+                        result.best_suggested_stat_code,
+                        result.best_suggested_tco_link || '',
+                        `"${result.other_suggested_codes.map(c => `${c.hs_code}/${c.stat_code}`).join('; ')}"`,
+                        result.total_time_seconds || '',
+                        `"${(result.reasoning || '').replace(/"/g, '""')}"`
+                    ].join(',');
+                })
             ].join('\n');
 
             // Download file
@@ -675,6 +763,42 @@
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
+        }
+
+        function showLoadingIndicators() {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsSummary = document.getElementById('resultsSummary');
+            const resultsBody = document.getElementById('resultsBody');
+
+            // Update summary to show spinners for metrics
+            const totalItems = uploadedData.length;
+            resultsSummary.innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-number">${totalItems}</span>
+                    <span class="summary-label">Total Items</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-number"><span class="cell-spinner" aria-label="loading"></span></span>
+                    <span class="summary-label">Avg Time</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-number"><span class="cell-spinner" aria-label="loading"></span></span>
+                    <span class="summary-label">TCO Available</span>
+                </div>
+            `;
+
+            // Replace result columns with spinners for each row
+            const rows = resultsBody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const cells = row.children;
+                for (let i = 3; i <= 8; i += 1) {
+                    if (cells[i]) {
+                        cells[i].innerHTML = '<span class="cell-spinner" aria-label="loading"></span>';
+                    }
+                }
+            });
+
+            resultsSection.style.display = 'block';
         }
     </script>
 </body>
