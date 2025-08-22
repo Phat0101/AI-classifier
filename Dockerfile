@@ -16,6 +16,8 @@ RUN pip install uv
 # Copy project files
 COPY . .
 
+ENV PYTHONUNBUFFERED=1
+
 # Install dependencies using uv
 RUN uv sync --frozen
 
