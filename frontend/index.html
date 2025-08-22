@@ -338,6 +338,15 @@
             transition: width 0.3s ease;
         }
 
+        .progress-steps {
+            margin-top: 6px;
+            color: #6c757d;
+            font-size: 0.85rem;
+        }
+        .progress-steps strong {
+            color: #343a40;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .container {
@@ -379,6 +388,11 @@
                 <label for="tokenInput" style="font-weight:500;">API Token</label>
                 <input id="tokenInput" type="password" placeholder="Paste Bearer token" style="flex: 1 1 260px; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;" />
                 <button class="btn" id="showTokenBtn" type="button">Show</button>
+                <label for="regionSelect" style="font-weight:500;">Region</label>
+                <select id="regionSelect" style="padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                    <option value="au" selected>Australia (AU)</option>
+                    <option value="nz">New Zealand (NZ)</option>
+                </select>
             </div>
             <button class="btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
                 Choose File
@@ -391,6 +405,7 @@
             <div class="progress-bar" id="progressBar" style="display: none;">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
+            <div class="progress-steps" id="progressSteps" style="display: none;"></div>
         </div>
 
         <div class="results-section" id="resultsSection">
@@ -422,6 +437,28 @@
     <script>
         let uploadedData = [];
         let classificationResults = [];
+        let currentRegion = 'au';
+
+        // Progress step labels and thresholds
+        const PROGRESS_STEPS = [
+            { threshold: 0,   text: 'Understanding the products' },
+            { threshold: 20,  text: 'Researching the products' },
+            { threshold: 45,  text: 'Classifying the products' },
+            { threshold: 70,  text: 'Synthesising the recommendations' },
+            { threshold: 90,  text: 'Finalising the responses' },
+        ];
+
+        function renderProgressSteps(activeIndex) {
+            return PROGRESS_STEPS.map((s, i) => i === activeIndex ? `<strong>${s.text}</strong>` : s.text).join(' -> ');
+        }
+
+        function updateProgressSteps(el, percent) {
+            let idx = 0;
+            for (let i = PROGRESS_STEPS.length - 1; i >= 0; i -= 1) {
+                if (percent >= PROGRESS_STEPS[i].threshold) { idx = i; break; }
+            }
+            el.innerHTML = renderProgressSteps(idx);
+        }
 
         // File upload handlers
         const fileInput = document.getElementById('fileInput');
@@ -557,8 +594,11 @@
             // Show progress bar
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
+            const progressStepsEl = document.getElementById('progressSteps');
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
+            progressStepsEl.style.display = 'block';
+            progressStepsEl.innerHTML = renderProgressSteps(0);
 
             // Show loading indicators in the table and summary only when classification starts
             showLoadingIndicators();
@@ -572,14 +612,22 @@
                     }))
                 };
 
-                // Simulate progress (since we don't have real progress from the API)
+                // Simulate progress more slowly (avg 70–120s) until server completes
                 let progress = 0;
+                const totalDurationSec = 70 + Math.floor(Math.random() * 51); // 70..120
+                const startTs = Date.now();
                 const progressInterval = setInterval(() => {
-                    progress = Math.min(progress + Math.random() * 15, 90);
-                    progressFill.style.width = progress + '%';
+                    const elapsed = (Date.now() - startTs) / 1000;
+                    const planned = Math.min(95, (elapsed / totalDurationSec) * 100);
+                    if (planned > progress) progress = planned;
+                    progressFill.style.width = progress.toFixed(2) + '%';
+                    updateProgressSteps(progressStepsEl, progress);
                 }, 1000);
 
-                const response = await fetch('/classify/au', {
+                const region = (document.getElementById('regionSelect').value || 'au').toLowerCase();
+                currentRegion = region;
+                const endpoint = region === 'nz' ? '/classify/nz' : '/classify/au';
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -590,6 +638,7 @@
 
                 clearInterval(progressInterval);
                 progressFill.style.width = '100%';
+                updateProgressSteps(progressStepsEl, 100);
 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -625,6 +674,10 @@
             const resultsSection = document.getElementById('resultsSection');
             const resultsSummary = document.getElementById('resultsSummary');
             const resultsBody = document.getElementById('resultsBody');
+            const theadRow = document.querySelector('thead tr');
+            if (theadRow && theadRow.children && theadRow.children[4]) {
+                theadRow.children[4].textContent = currentRegion === 'nz' ? 'Best Stat Key' : 'Best Stat Code';
+            }
 
             // Calculate summary statistics
             const totalItems = classificationResults.length;
@@ -653,24 +706,28 @@
             // Display results table
             resultsBody.innerHTML = classificationResults.map(result => {
                 const supplier = result.supplier_name || idToSupplier.get(String(result.id)) || '';
+                const bestStat = currentRegion === 'nz' ? (result.best_suggested_stat_key || '-') : (result.best_suggested_stat_code || '-');
+                const otherCodesHtml = (result.other_suggested_codes || []).map(code => {
+                    const stat = currentRegion === 'nz' ? code.stat_key : code.stat_code;
+                    const hs = code.hs_code;
+                    const tco = currentRegion === 'nz' ? '' : (code.tco_link ? ` <a href="${code.tco_link}" target="_blank" class="tco-link">TCO</a>` : '');
+                    return `<div><span class="code">${hs}</span>/<span class="code">${stat}</span>${tco}</div>`;
+                }).join('');
                 return `
                 <tr>
                     <td class="item-id">${result.id}</td>
                     <td class="description" title="${result.description}">${result.description}</td>
                     <td class="supplier">${supplier ? `<span class="supplier-badge">${supplier}</span>` : '-'}</td>
                     <td><span class="code">${result.best_suggested_hs_code}</span></td>
-                    <td><span class="code">${result.best_suggested_stat_code}</span></td>
+                    <td><span class="code">${bestStat}</span></td>
                     <td>
-                        ${result.best_suggested_tco_link 
-                            ? `<a href="${result.best_suggested_tco_link}" target="_blank" class="tco-link">TCO</a>`
-                            : '-'
-                        }
+                        ${currentRegion === 'nz' 
+                            ? '-' 
+                            : (result.best_suggested_tco_link 
+                                ? `<a href="${result.best_suggested_tco_link}" target="_blank" class="tco-link">TCO</a>`
+                                : '-')}
                     </td>
-                    <td class="other-codes">
-                        ${(result.other_suggested_codes || []).map(code => 
-                            `<div><span class="code">${code.hs_code}</span>/<span class="code">${code.stat_code}</span>${code.tco_link ? ` <a href="${code.tco_link}" target="_blank" class="tco-link">TCO</a>` : ''}</div>`
-                        ).join('')}
-                    </td>
+                    <td class="other-codes">${otherCodesHtml}</td>
                     <td><span class="time-badge">${(result.total_time_seconds || 0).toFixed(1)}s</span></td>
                     <td class="reasoning">${result.reasoning || '-'}</td>
                 </tr>`;
@@ -728,10 +785,9 @@
             if (classificationResults.length === 0) return;
 
             // Convert results to CSV
-            const headers = [
-                'id', 'description', 'supplier_name', 'best_suggested_hs_code', 'best_suggested_stat_code',
-                'best_suggested_tco_link', 'other_codes', 'total_time_seconds', 'reasoning'
-            ];
+            const headers = currentRegion === 'nz'
+                ? ['id', 'description', 'supplier_name', 'best_suggested_hs_code', 'best_suggested_stat_key', 'other_codes', 'total_time_seconds', 'reasoning']
+                : ['id', 'description', 'supplier_name', 'best_suggested_hs_code', 'best_suggested_stat_code', 'best_suggested_tco_link', 'other_codes', 'total_time_seconds', 'reasoning'];
 
             const idToSupplier = new Map(uploadedData.map(item => [String(item.id), item.supplier_name || item.supplier || item['supplier name'] || '']));
 
@@ -739,17 +795,32 @@
                 headers.join(','),
                 ...classificationResults.map(result => {
                     const supplier = result.supplier_name || idToSupplier.get(String(result.id)) || '';
-                    return [
-                        result.id,
-                        `"${result.description.replace(/"/g, '""')}"`,
-                        `"${supplier.replace(/"/g, '""')}"`,
-                        result.best_suggested_hs_code,
-                        result.best_suggested_stat_code,
-                        result.best_suggested_tco_link || '',
-                        `"${result.other_suggested_codes.map(c => `${c.hs_code}/${c.stat_code}`).join('; ')}"`,
-                        result.total_time_seconds || '',
-                        `"${(result.reasoning || '').replace(/"/g, '""')}"`
-                    ].join(',');
+                    if (currentRegion === 'nz') {
+                        const other = (result.other_suggested_codes || []).map(c => `${c.hs_code}/${c.stat_key}`).join('; ');
+                        return [
+                            result.id,
+                            `"${result.description.replace(/"/g, '""')}"`,
+                            `"${supplier.replace(/"/g, '""')}"`,
+                            result.best_suggested_hs_code,
+                            result.best_suggested_stat_key || '',
+                            `"${other}"`,
+                            result.total_time_seconds || '',
+                            `"${(result.reasoning || '').replace(/"/g, '""')}"`
+                        ].join(',');
+                    } else {
+                        const other = (result.other_suggested_codes || []).map(c => `${c.hs_code}/${c.stat_code}`).join('; ');
+                        return [
+                            result.id,
+                            `"${result.description.replace(/"/g, '""')}"`,
+                            `"${supplier.replace(/"/g, '""')}"`,
+                            result.best_suggested_hs_code,
+                            result.best_suggested_stat_code || '',
+                            result.best_suggested_tco_link || '',
+                            `"${other}"`,
+                            result.total_time_seconds || '',
+                            `"${(result.reasoning || '').replace(/"/g, '""')}"`
+                        ].join(',');
+                    }
                 })
             ].join('\n');
 
@@ -758,7 +829,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `tariff_classification_results_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `tariff_classification_results_${currentRegion}_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

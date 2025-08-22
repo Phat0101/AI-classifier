@@ -260,7 +260,9 @@ if ENABLE_DOCS:
 
 # Mount AU classifier routes first
 from .au.classifier import router as au_router
+from .nz.classifier import router as nz_router
 app.include_router(au_router)
+app.include_router(nz_router)
 
 # Health check endpoint
 @app.get("/health")

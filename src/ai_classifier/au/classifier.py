@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Optional
 import threading
 
@@ -20,6 +20,7 @@ from ai_classifier.au.tools import (
     tariff_chapter_lookup,
     tariff_search,
     tariff_concession_lookup,
+    search_product_info,
 )
 
 
@@ -58,19 +59,20 @@ class LLMClassificationOutput(BaseModel):
 _SYSTEM_PROMPT = (
     """
 You are an Australian tariff classification expert. You have access to tools:
-- tariff_chapter_lookup(hs_code: string[4+ digits]) → returns chapter_flatten_tariffs data and chapter notes for a 4+ digit code
+- tariff_chapter_lookup(hs_code: string[4–6 digits]) → returns chapter_flatten_tariffs data and chapter notes. Use 6 digits when confident; otherwise 4 digits.
 - tariff_search(hs_code: string[2-8 digits]) → verifies and fetches details for a specific 2-8 digit HS code
 - tariff_concession_lookup(bylaw_number: numeric string) → returns Schedule 4 concession details by by-law
 
 Follow this STRICT classification process without asking follow-up questions:
+Use the provided 'Grounded Product Brief' (if present) as factual context in addition to the user's description.
 1) Product Analysis
    - Extract and list key characteristics from the user's description: material, form, function, use, species/type, etc.
    - Keep it brief but complete.
 
 2) Shortlist Tariff Chapters
-   - Identify up to three 6-digit candidate chapters (or fewer if highly confident).
-   - For each candidate, determine the corresponding 4-digit heading (the first 4 digits).
-   - You MUST run tariff_chapter_lookup for each shortlisted 4-digit heading.
+   - Identify up to three 6-digit candidate headings (or fewer if highly confident).
+   - For each candidate, choose the appropriate prefix for lookup: use 6 digits when confident in the subheading; otherwise use 4 digits for a broader chapter view.
+   - Run tariff_chapter_lookup once per candidate with the chosen 4- or 6-digit code. Do not call both for the same candidate unless revising based on new evidence.
 
 3) Look Up Tariff Codes
    - From each chapter lookup's rawData + chapterNotes, shortlist the most relevant 8-digit codes.
@@ -143,7 +145,7 @@ def _get_or_create_agent():
             output_type=LLMClassificationOutput,
             tools=[tariff_chapter_lookup, tariff_search, tariff_concession_lookup],
             retries=2,
-            model_settings={"gemini_thinking_config": ThinkingConfig(thinking_budget=3000)},
+            model_settings={"gemini_thinking_config": ThinkingConfig(thinking_budget=5000), "temperature": 0.05},
         )
         return _classifier_agent
 
@@ -168,7 +170,7 @@ async def _run_llm_with_pydantic_ai(user_text: str) -> tuple[LLMClassificationOu
         }
 
 _CLASSIFY_SEMAPHORE = asyncio.Semaphore(int(os.getenv("CLASSIFY_MAX_CONCURRENCY", "100")))
-_MAX_RETRIES = int(os.getenv("CLASSIFY_MAX_RETRIES", "3"))
+_MAX_RETRIES = int(os.getenv("CLASSIFY_MAX_RETRIES", "4"))
 _RETRY_BACKOFF_SECS = float(os.getenv("CLASSIFY_RETRY_BACKOFF", "0.5"))
 
 async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]:
@@ -177,9 +179,16 @@ async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]
 
     # Merge supplier_name into the description context for better classification when provided
     supplier_prefix = f"Supplier: {item.supplier_name}. " if getattr(item, "supplier_name", None) else ""
+    
+    grounded_product_brief = await search_product_info(getattr(item, "supplier_name", None) or "", item.description)
+    grounded_product_brief_text = grounded_product_brief.get("content") or ""
+    grounded_usage = grounded_product_brief.get("usage") or {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    print(f'Grounded product brief for {item.description}: {grounded_usage} len={len(grounded_product_brief_text)}')
+    
     prompt = (
-        "Classify the following item description. Return a JSON object with keys: "
+        "Classify the item using the provided Grounded Product Brief and description. Return a JSON object with keys: "
         "best_suggested_hs_code, best_suggested_stat_code, suggested_codes (array of 2 with hs_code, stat_code), reasoning.\n\n"
+        "Grounded Product Brief (factual context):\n" + (grounded_product_brief_text[:6000] if isinstance(grounded_product_brief_text, str) else "") + "\n\n"
         f"{supplier_prefix}Description: {item.description}"
     )
 
@@ -188,14 +197,37 @@ async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]
         llm_out = None
         usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         last_exc: Optional[BaseException] = None
+        def _exception_brief(exc: BaseException) -> str:
+            try:
+                parts: list[str] = [f"type={type(exc).__name__}"]
+                msg = str(exc)
+                if msg:
+                    parts.append(f"msg={msg}")
+                resp = getattr(exc, "response", None)
+                status = getattr(resp, "status_code", None)
+                if status:
+                    parts.append(f"status={status}")
+                code = getattr(exc, "code", None) or getattr(exc, "status", None)
+                if code:
+                    parts.append(f"code={code}")
+                return "; ".join(parts)[:500]
+            except Exception:
+                return type(exc).__name__
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 llm_out, usage = await _run_llm_with_pydantic_ai(prompt)
+                # Merge grounded brief token usage into the classification usage
+                usage["input_tokens"] += int(grounded_usage.get("input_tokens", 0))
+                usage["output_tokens"] += int(grounded_usage.get("output_tokens", 0))
+                usage["total_tokens"] += int(grounded_usage.get("total_tokens", 0))
                 break
-            except Exception as exc:  # avoid failing batch
+            except (ValidationError, OSError, RuntimeError, ValueError, Exception) as exc:  # retry on model/validation/network errors
                 last_exc = exc
                 if attempt < _MAX_RETRIES:
-                    await asyncio.sleep(_RETRY_BACKOFF_SECS * (2 ** (attempt - 1)))
+                    backoff = _RETRY_BACKOFF_SECS * (2 ** (attempt - 1))
+                    print(f"LLM error on attempt {attempt}/{_MAX_RETRIES}: {_exception_brief(exc)}")
+                    print(f"Retrying in {backoff:.2f}s...")
+                    await asyncio.sleep(backoff)
                     continue
                 else:
                     # Will fall back to default values below
@@ -260,6 +292,7 @@ async def _classify_single_item(item: Item) -> tuple[ClassificationResult, dict]
         other_suggested_codes=normalized_suggestions,
         total_time_seconds=total_time,
         reasoning=llm_out.reasoning or "",
+        grounded_product_brief=grounded_product_brief_text or None,
     )
 
     return result, usage

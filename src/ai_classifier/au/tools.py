@@ -3,8 +3,12 @@ from __future__ import annotations
 from typing import List, Dict, Any, Optional
 import asyncio
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 import httpx
+import os
+from google import genai
+from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
+from ai_classifier.util.sanitize import sanitize_payload as _sanitize_payload
 
 
 # -----------------------------
@@ -52,6 +56,10 @@ class ClassificationResult(BaseModel):
         description="Total time taken for classification in seconds",
     )
     reasoning: str = Field(..., description="Detailed reasoning for the classification in Markdown format")
+    grounded_product_brief: Optional[str] = Field(
+        default=None,
+        description="Grounded product brief used for classification in Markdown format",
+    )
 
 
 class ClassificationRequest(BaseModel):
@@ -72,11 +80,12 @@ _CLEAR_BASE = "https://api.clear.ai/api/v1/au_tariff"
 
 async def tariff_chapter_lookup(hs_code_4_or_more: str) -> Dict[str, Any]:
     """
-    Fetch flattened chapter tariffs and chapter notes for a 4+ digit HS code.
+    Fetch flattened chapter tariffs and chapter notes for a 4–6 digit HS code.
+    Use 6 digits when confident about the subheading; otherwise 4 digits for a broader chapter view.
     Returns a dict with keys: rawData, chapterNotes.
     """
     code = hs_code_4_or_more.strip()
-    if not code.isdigit() or len(code) < 4:
+    if not code.isdigit() or len(code) < 4 or len(code) > 6:
         return {"rawData": [], "chapterNotes": None}
 
     chapter_code = code[:2]
@@ -105,7 +114,8 @@ async def tariff_chapter_lookup(hs_code_4_or_more: str) -> Dict[str, Any]:
         notes = None
     print(f'Agent called tariff_chapter_lookup for {code}')
 
-    return {"rawData": raw, "chapterNotes": notes}
+    # Sanitize rawData and chapterNotes (including any flatten_goods / notes fields)
+    return {"rawData": _sanitize_payload(raw), "chapterNotes": _sanitize_payload(notes) if notes is not None else None}
 
 
 async def tariff_search(hs_code_2_to_8: str) -> List[Dict[str, Any]]:
@@ -154,3 +164,88 @@ async def tariff_concession_lookup(bylaw_number: str) -> Dict[str, Any]:
             return res.json()
     except (httpx.HTTPError, ValueError):
         return {"results": []}
+
+
+# -----------------------------
+# Grounded product brief via Google GenAI
+# -----------------------------
+
+
+async def search_product_info(brand: str, product_description: str) -> Dict[str, Any]:
+    """
+    Generate a grounded product brief using Google GenAI (Gemini Flash) with Google Search grounding.
+    Returns a dict with key: content (string markdown).
+    """
+    brand = (brand or "").strip()
+    product_description = (product_description or "").strip()
+    if not product_description:
+        return {"content": "Missing product_description"}
+
+    print(f'Grounded product brief generation for {brand} {product_description[:80]}')
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return {"content": "GEMINI_API_KEY or GOOGLE_API_KEY not set in environment"}
+
+    model_name = os.getenv("GENAI_GROUNDED_MODEL", "gemini-2.5-flash")
+
+    prompt = (
+        "You are compiling a concise, factual Product Brief for customs tariff classification.\n"
+        "Use grounded web knowledge via Google Search to extract verifiable facts.\n"
+        "Do not fabricate. If unknown, state 'Unknown'.\n\n"
+        "Keep the product brief concise and factual. Do not include any opinions or subjective assessments.\n\n"
+        f"Brand/Supplier: {brand or 'Unknown'}\n"
+        f"Product description: {product_description}\n\n"
+        "Produce markdown with the following sections: \n"
+        "1) Official product name and model\n"
+        "2) Materials and composition (percentages if available)\n"
+        "3) Construction/manufacturing method (e.g., knitted vs woven; injection-molded; etc.)\n"
+        "4) Primary function and end use\n"
+        "5) Key physical specs (dimensions, weight, capacity, voltage/power, fiber content, etc.)\n"
+        "6) Included accessories and packaging\n"
+        "7) Certifications/standards/compliance marks (e.g., CE, FCC, safety ratings)\n"
+        "8) HS-relevant classification cues (e.g., footwear upper material; textile type; toy vs model; electronics type)\n"
+        "9) Notable exclusions/ambiguities\n"
+        "10) Sources (list URLs used)."
+    )
+
+    def _run_genai_sync() -> tuple[str, Dict[str, int]]:
+        client = genai.Client(api_key=api_key)
+        cfg = GenerateContentConfig(
+            temperature=0.1,
+            top_p=0.95,
+            max_output_tokens=2048,
+            tools=[Tool(google_search=GoogleSearch())]
+        )
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=cfg,
+        )
+        text = getattr(resp, "text", None)
+        # Extract token usage when available
+        usage_meta = getattr(resp, "usage_metadata", None)
+        def _as_int(v: Any) -> int:
+            return int(v) if isinstance(v, (int, float)) else 0
+        if usage_meta is not None:
+            prompt_tokens = _as_int(getattr(usage_meta, "prompt_token_count", 0)) + _as_int(getattr(usage_meta, "tool_use_prompt_token_count", 0))
+            response_tokens = _as_int(getattr(usage_meta, "candidates_token_count", 0)) + _as_int(getattr(usage_meta, "thoughts_token_count", 0))
+            total_tokens = _as_int(getattr(usage_meta, "total_token_count", 0))
+            if total_tokens == 0:
+                total_tokens = prompt_tokens + response_tokens
+            usage = {
+                "input_tokens": prompt_tokens,
+                "output_tokens": response_tokens,
+                "total_tokens": total_tokens,
+            }
+        else:
+            usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        content_text = text if isinstance(text, str) and text.strip() else ""
+        return content_text, usage
+
+    try:
+        text, usage = await asyncio.to_thread(_run_genai_sync)
+    except (ValidationError, RuntimeError, ValueError, OSError) as exc:
+        return {"content": f"Error generating grounded product brief: {type(exc).__name__}", "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}
+
+    return {"content": text or "", "usage": usage}
