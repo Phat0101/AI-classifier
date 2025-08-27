@@ -25,7 +25,7 @@ class NZLLMClassificationOutput(BaseModel):
 	best_suggested_hs_code: str
 	best_suggested_stat_key: str  # NZ: 2 digits + 1 char, e.g. 00H
 	suggested_codes: List[NZSuggestedCode]
-	reasoning: str
+	reasoning: str = Field(..., description="Detailed reasoning for the classification in normal English, No Markdown")
 
 
 _SYSTEM_PROMPT_NZ = (
@@ -53,7 +53,7 @@ Return JSON with fields:
     {"hs_code": string(8 digits), "stat_key": string(3)},
     {"hs_code": string(8 digits), "stat_key": string(3)}
   ],
-  "reasoning": string
+  "reasoning": string, (Normal English, no Markdown formatting)
 }
 
 Constraints:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from typing import Optional
 import threading
 
@@ -48,7 +48,7 @@ class LLMClassificationOutput(BaseModel):
     best_suggested_stat_code: str
     best_suggested_tco_link: Optional[str] = None
     suggested_codes: List[SuggestedCode]
-    reasoning: str
+    reasoning: str = Field(..., description="Detailed reasoning for the classification in normal English, No Markdown")
 
 
 # -----------------------------
@@ -98,7 +98,7 @@ Use the provided 'Grounded Product Brief' (if present) as factual context in add
          {{"hs_code": string(8 digits), "stat_code": string(2 digits), "tco_link": string | null}},
          {{"hs_code": string(8 digits), "stat_code": string(2 digits), "tco_link": string | null}}
        ],
-       "reasoning": string
+       "reasoning": string, (Normal English, no Markdown formatting)
      }}
 
 Important constraints:
