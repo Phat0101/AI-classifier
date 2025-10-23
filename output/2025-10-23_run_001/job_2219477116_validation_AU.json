@@ -1,0 +1,214 @@
+{
+  "job_id": "2219477116",
+  "region": "AU",
+  "header": [
+    {
+      "check_id": "au_h_001",
+      "auditing_criteria": "Owner match",
+      "status": "PASS",
+      "assessment": "The incoterm on the entry print is FCA. According to the checking logic, for non-DDP shipments, the owner on the entry print should match the buyer on the commercial invoice. The owner on the entry print is \"COLIN HUI (HUICOLI)\", and the buyer on the commercial invoice is \"Kyatchi Cards Pty Ltd Colin Hui\". These names are consistent and refer to the same entity, so the check passes.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ownerName: COLIN HUI (HUICOLI), iTerms: FCA",
+      "target_value": "buyer_company_name: Kyatchi Cards Pty Ltd Colin Hui, supplier_company_name: Exstard Co., Ltd., inco_terms: Free on Board"
+    },
+    {
+      "check_id": "au_h_002",
+      "auditing_criteria": "Supplier match",
+      "status": "PASS",
+      "assessment": "The supplier name on the entry print, \"EXSTARD CO LTD\", is a clear match for the supplier name on the commercial invoice, \"Exstard Co., Ltd.\". The difference in capitalization and abbreviation is acceptable under the fuzzy matching rule.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "EXSTARD CO LTD",
+      "target_value": "Exstard Co., Ltd."
+    },
+    {
+      "check_id": "au_h_003",
+      "auditing_criteria": "Incoterms match",
+      "status": "FAIL",
+      "assessment": "The incoterm on the entry print is \"FCA\", while the \"Terms of Trade\" on the commercial invoice is \"Free on Board\". \"Free on Board\" corresponds to the incoterm FOB, not FCA. As FCA and FOB are distinct incoterms with different rules and points of risk transfer, this is a mismatch.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "FCA",
+      "target_value": "Free on Board"
+    },
+    {
+      "check_id": "au_h_004",
+      "auditing_criteria": "Currency match",
+      "status": "PASS",
+      "assessment": "The currency code on the entry print is \"JPY\", which matches the \"Currency Code\" of \"JPY\" on the commercial invoice. The values are consistent.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "JPY",
+      "target_value": "JPY"
+    },
+    {
+      "check_id": "au_h_005",
+      "auditing_criteria": "Invoice number match",
+      "status": "PASS",
+      "assessment": "The invoice number field is not explicitly populated on the entry print. Similarly, the \"Invoice No:\" field on the commercial invoice is blank. As both values are missing, the check defaults to PASS according to the special considerations.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "NOT FOUND",
+      "target_value": "NOT FOUND"
+    },
+    {
+      "check_id": "au_h_006",
+      "auditing_criteria": "Shipper consistency",
+      "status": "PASS",
+      "assessment": "The shipper name on the air waybill is \"Exstard Co., Ltd.\", which is an exact match for the supplier name on the commercial invoice, \"Exstard Co., Ltd.\".",
+      "source_document": "air_waybill",
+      "target_document": "commercial_invoice",
+      "source_value": "Exstard Co., Ltd.",
+      "target_value": "Exstard Co., Ltd."
+    },
+    {
+      "check_id": "au_h_007",
+      "auditing_criteria": "Consignee consistency",
+      "status": "PASS",
+      "assessment": "The consignee name on the air waybill, \"Kyatchi Cards Pty Ltd Colin Hui\", is an exact match for the buyer name on the commercial invoice, \"Kyatchi Cards Pty Ltd Colin Hui\".",
+      "source_document": "air_waybill",
+      "target_document": "commercial_invoice",
+      "source_value": "Kyatchi Cards Pty Ltd Colin Hui",
+      "target_value": "Kyatchi Cards Pty Ltd Colin Hui"
+    },
+    {
+      "check_id": "au_h_008",
+      "auditing_criteria": "Country of origin consistency",
+      "status": "PASS",
+      "assessment": "The country of origin on the entry print is listed as \"JP\" in the ORIGIN/PREF column. This is consistent with the country of origin \"JAPAN\" listed in the COO column on the commercial invoice.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "JP",
+      "target_value": "JAPAN"
+    },
+    {
+      "check_id": "au_h_009",
+      "auditing_criteria": "Country of export match",
+      "status": "PASS",
+      "assessment": "The country of export can be inferred from the shipper's address on the air waybill, which is \"Japan\". The country of export on the entry print can be inferred from the \"LOAD PT\" field, which is \"JPNRT\", indicating Japan. The countries are consistent.",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "Japan",
+      "target_value": "JP"
+    },
+    {
+      "check_id": "au_h_010",
+      "auditing_criteria": "Port of origin consistency",
+      "status": "FAIL",
+      "assessment": "The air waybill's routing information \"OMELJP-OSA-OAA\" indicates the origin airport is Osaka (OSA). However, the entry print lists the \"LOAD PT\" (Port of Loading) as \"JPNRT\", which is Narita, Tokyo. These are two different airports in different cities, so this is a mismatch.",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "OSA (Osaka)",
+      "target_value": "JPNRT (Narita, Tokyo)"
+    },
+    {
+      "check_id": "au_h_011",
+      "auditing_criteria": "Weight consistency",
+      "status": "PASS",
+      "assessment": "The total weight on the air waybill is \"3.5 kg\". This matches the \"GRWT (KG)\" of \"3.50 KG\" on the entry print. The minor difference in decimal places is acceptable.",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "3.5 kg",
+      "target_value": "3.50 KG"
+    },
+    {
+      "check_id": "au_h_012",
+      "auditing_criteria": "Package count consistency",
+      "status": "PASS",
+      "assessment": "The number of pieces on the air waybill is \"1\". This matches the \"TOTAL NUMBER OF PACKAGES\" of \"1\" on the entry print.",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "1",
+      "target_value": "1"
+    },
+    {
+      "check_id": "au_h_013",
+      "auditing_criteria": "Description consistency",
+      "status": "PASS",
+      "assessment": "The goods description on the entry print is \"TRADING CARD GAME SET PAPER MADE PAPER\". This is consistent with the item description on the commercial invoice, \"Trading Card, Paper made\". Both descriptions clearly refer to the same product.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "TRADING CARD GAME SET PAPER MADE PAPER",
+      "target_value": "Trading Card, Paper made"
+    }
+  ],
+  "valuation": [
+    {
+      "check_id": "au_v_001",
+      "auditing_criteria": "VFD (Value for Duty) validation",
+      "status": "PASS",
+      "assessment": "PASS: The Value for Duty (VFD), also shown as Total Customs Value on the entry print, is $A 1,287.69. This value correctly corresponds to the converted invoice total of 126,000 JPY (ITOT on entry print is 126,000.00 = $A 1,287.69). The incoterm is FCA, meaning the customs value is based on the value of the goods, which aligns with the documents.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "Total Customs Value: $A 1,287.69",
+      "target_value": "Total Invoice Amount: 126,000 JPY, Incoterm: Free on Board"
+    },
+    {
+      "check_id": "au_v_002",
+      "auditing_criteria": "FOB value match",
+      "status": "PASS",
+      "assessment": "PASS: The FOB value on the entry print is 126,000.00 JPY. The commercial invoice has an incoterm of 'Free on Board' and a total invoice amount of 126,000 JPY. Therefore, the implicit FOB value on the invoice matches the declared FOB value on the entry print.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "FOB (1): 126,000.00",
+      "target_value": "Total Invoice Amount: 126,000 JPY (Incoterm: Free on Board)"
+    },
+    {
+      "check_id": "au_v_003",
+      "auditing_criteria": "CIF value match",
+      "status": "PASS",
+      "assessment": "PASS: The CIF value on the entry print is 139,157.89 JPY. The commercial invoice does not specify a CIF amount. As per the pass condition, if the invoice does not provide a CIF amount, the check defaults to PASS.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "CIF: 139,157.89",
+      "target_value": "CIF Amount: NOT FOUND"
+    },
+    {
+      "check_id": "au_v_004",
+      "auditing_criteria": "Freight validation",
+      "status": "PASS",
+      "assessment": "PASS: The entry print incoterm is FCA, which is not a freight-inclusive term. A Transport & Insurance (T&I) cost of 134.47 is declared on the entry print. The commercial invoice does not specify a separate freight amount. According to the pass condition, if no freight is specified on the invoice, the check is acceptable.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "T&I: 134.47, iTerms: FCA",
+      "target_value": "Freight Amount: NOT FOUND, Incoterm: Free on Board"
+    },
+    {
+      "check_id": "au_v_005",
+      "auditing_criteria": "Insurance cost validation",
+      "status": "PASS",
+      "assessment": "PASS: The incoterm on the entry print is FCA, which is not an insurance-inclusive term. The commercial invoice does not list a separate charge for insurance. As both documents do not provide a specific insurance amount to compare, the check passes.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "Insurance: Not specified (part of T&I), iTerms: FCA",
+      "target_value": "Insurance Amount: NOT FOUND, Incoterm: Free on Board"
+    },
+    {
+      "check_id": "au_v_006",
+      "auditing_criteria": "Transport & Insurance costs match",
+      "status": "PASS",
+      "assessment": "PASS: The entry print declares a combined Transport & Insurance (T&I) cost of 134.47. The commercial invoice does not provide a value for transport and insurance. As per the pass condition, if the invoice does not provide this amount, the check defaults to PASS.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "T & I: 134.47",
+      "target_value": "Transport and Insurance: NOT FOUND"
+    },
+    {
+      "check_id": "au_v_007",
+      "auditing_criteria": "Invoice total match",
+      "status": "PASS",
+      "assessment": "PASS: The invoice total (ITOT) on the entry print is 126,000.00 JPY. This value is a direct match with the 'Total Invoice Amount' of 126,000 JPY found on the commercial invoice.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ITOT (1): 126,000.00",
+      "target_value": "Total Invoice Amount: 126,000 JPY"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "passed": 18,
+    "failed": 2,
+    "questionable": 0
+  }
+}

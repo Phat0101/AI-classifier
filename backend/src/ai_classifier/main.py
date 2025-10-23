@@ -100,9 +100,13 @@ _EXEMPT_PATHS = {
     "/docs",  # swagger (when DEBUG true)
     "/docs/oauth2-redirect",
     "/redoc",  # redoc (when DEBUG true)
+    "/api/upload-batch",  # batch upload endpoint (no auth needed for now)
+    "/api/process-batch",  # batch process endpoint (no auth needed for now)
 }
 _EXEMPT_PREFIXES = [
     "/static/",  # static assets
+    "/api/checklist/",  # checklist management (no auth needed for editor)
+    "/api/output/",  # output browser (no auth needed for browsing results)
 ]
 
 
@@ -263,6 +267,18 @@ from .au.classifier import router as au_router
 from .nz.classifier import router as nz_router
 app.include_router(au_router)
 app.include_router(nz_router)
+
+# Mount batch processing routes
+from .routes.batch import router as batch_router
+app.include_router(batch_router)
+
+# Mount checklist management routes
+from .routes.checklist import router as checklist_router
+app.include_router(checklist_router)
+
+# Mount output directory browsing routes
+from .routes.output import router as output_router
+app.include_router(output_router)
 
 # Health check endpoint
 @app.get("/health")

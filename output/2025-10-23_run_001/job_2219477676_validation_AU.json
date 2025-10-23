@@ -1,0 +1,214 @@
+{
+  "job_id": "2219477676",
+  "region": "AU",
+  "header": [
+    {
+      "check_id": "au_h_001",
+      "auditing_criteria": "Owner match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_002",
+      "auditing_criteria": "Supplier match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_003",
+      "auditing_criteria": "Incoterms match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_004",
+      "auditing_criteria": "Currency match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_005",
+      "auditing_criteria": "Invoice number match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_006",
+      "auditing_criteria": "Shipper consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_007",
+      "auditing_criteria": "Consignee consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_008",
+      "auditing_criteria": "Country of origin consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_009",
+      "auditing_criteria": "Country of export match",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_010",
+      "auditing_criteria": "Port of origin consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_011",
+      "auditing_criteria": "Weight consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_012",
+      "auditing_criteria": "Package count consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "air_waybill",
+      "target_document": "entry_print",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    },
+    {
+      "check_id": "au_h_013",
+      "auditing_criteria": "Description consistency",
+      "status": "FAIL",
+      "assessment": "Batch validation error: status_code: 503, model_name: gemini-2.5-pro, body: {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The model is overloaded. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "ERROR",
+      "target_value": "ERROR"
+    }
+  ],
+  "valuation": [
+    {
+      "check_id": "au_v_001",
+      "auditing_criteria": "VFD (Value for Duty) validation",
+      "status": "PASS",
+      "assessment": "The VFD (Total Customs Value) on the entry print is $A 1,888.61. The commercial invoice total is 184,800 JPY with an incoterm of 'Free on Board'. The entry print shows the invoice total (ITOT) as 184,800.00 JPY, which is converted to $A 1,888.61. The VFD correctly matches the converted invoice total, satisfying the pass condition.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "$A 1,888.61",
+      "target_value": "invoice_total_amount: 184,800 JPY, inco_terms: Free on Board"
+    },
+    {
+      "check_id": "au_v_002",
+      "auditing_criteria": "FOB value match",
+      "status": "PASS",
+      "assessment": "The FOB value on the entry print is explicitly stated as $A 1,888.61. The commercial invoice has 'Terms of Trade: Free on Board' and a 'Total Invoice Amount' of 184,800 JPY. The entry print correctly converts 184,800 JPY to $A 1,888.61. The values are consistent.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "$A 1,888.61",
+      "target_value": "184,800 JPY (as Invoice Total with FOB incoterm)"
+    },
+    {
+      "check_id": "au_v_003",
+      "auditing_criteria": "CIF value match",
+      "status": "PASS",
+      "assessment": "The CIF value on the entry print is $A 2,044.26. The commercial invoice does not specify a CIF amount. As per the pass condition, if the invoice does not provide a CIF amount, the check defaults to PASS.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "$A 2,044.26",
+      "target_value": "NOT FOUND"
+    },
+    {
+      "check_id": "au_v_004",
+      "auditing_criteria": "Freight validation",
+      "status": "PASS",
+      "assessment": "The entry print shows a combined 'T & I' value of $A 155.66 and an incoterm of FCA. The commercial invoice does not specify a separate freight amount. According to the pass condition, if no freight amount is specified on the target document, the check is acceptable.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "freight: part of T&I $A 155.66, iTerms: FCA",
+      "target_value": "freight_amount: NOT FOUND, inco_terms: Free on Board"
+    },
+    {
+      "check_id": "au_v_005",
+      "auditing_criteria": "Insurance cost validation",
+      "status": "PASS",
+      "assessment": "The incoterm on the entry print is FCA and on the commercial invoice is 'Free on Board', neither of which are insurance-inclusive. The commercial invoice does not list a separate insurance amount. The entry print includes insurance as part of a combined 'T & I' value of $A 155.66. Since the incoterm is not insurance-inclusive and the value is not provided on the invoice, the check passes.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "insurance: part of T&I $A 155.66, iTerms: FCA",
+      "target_value": "insurance_amount: NOT FOUND, inco_terms: Free on Board"
+    },
+    {
+      "check_id": "au_v_006",
+      "auditing_criteria": "Transport & Insurance costs match",
+      "status": "PASS",
+      "assessment": "The entry print declares a 'T & I' (Transport & Insurance) cost of $A 155.66. The commercial invoice does not provide a corresponding combined 'transport_and_insurance' amount. As per the pass condition, if the invoice does not provide this amount, the check defaults to PASS.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "$A 155.66",
+      "target_value": "NOT FOUND"
+    },
+    {
+      "check_id": "au_v_007",
+      "auditing_criteria": "Invoice total match",
+      "status": "PASS",
+      "assessment": "The entry print shows the invoice total (ITOT) as 184,800.00 in the original currency (JPY). The commercial invoice shows the 'Total Invoice Amount' as 184,800 JPY. The values are an exact match.",
+      "source_document": "entry_print",
+      "target_document": "commercial_invoice",
+      "source_value": "184,800.00",
+      "target_value": "184,800 JPY"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "passed": 7,
+    "failed": 13,
+    "questionable": 0
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "invoice_number": "2219477676",
+  "invoice_date": "2025-09-29",
+  "invoice_currency": "JPY",
+  "supplier_company_name": "Exstard Co.,Ltd.",
+  "supplier_address_line1": "601,21-12,1 Choume, Kitahorie",
+  "buyer_company_name": "Kyatchi Cards Pty Ltd",
+  "buyer_address_line1": "5 Nicholas Street",
+  "inco_terms": "FOB",
+  "invoice_total_amount": 184800.0,
+  "international_freight": null,
+  "insurance_charges": null,
+  "destination_charges": null,
+  "import_duties": null,
+  "inland_transportation": null,
+  "other_charges": null,
+  "fob_amount": 184800.0,
+  "cif_amount": null,
+  "transport_and_insurance": null,
+  "invoice_items": [
+    {
+      "item_number": 1,
+      "material_number": "",
+      "invoice_tariff_code": "9504.40.00.00",
+      "description": "Trading Card, Paper made",
+      "quantity": 1.0,
+      "quantity_unit": "PCS",
+      "net_weight": 4.7,
+      "net_weight_unit": "kg",
+      "total_price": 184800.0,
+      "unit_price": 184800.0,
+      "country_of_origin": "JAPAN"
+    }
+  ]
+}
