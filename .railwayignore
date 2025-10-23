@@ -36,3 +36,8 @@ htmlcov/
 venv/
 ENV/
 
+# Ignore shell scripts (for local dev only, not Railway)
+start.sh
+dev.sh
+install.sh
+
