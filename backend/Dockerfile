@@ -10,11 +10,13 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 RUN pip install --no-cache-dir uv
 
-# Copy project files (from backend directory since context is root)
-COPY backend/pyproject.toml backend/uv.lock ./
-COPY backend/src ./src
+# Copy project files
+# When used with Railway, context is backend/ directory
+# When used with docker-compose, context is root directory
+COPY pyproject.toml uv.lock ./
+COPY src ./src
 
-# Copy checklists directory from root
+# Copy checklists - should exist in backend/checklists after running setup script
 COPY checklists ./checklists
 
 # Install dependencies using uv
@@ -31,10 +33,5 @@ HEALTHCHECK --interval=300s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the application using granian ASGI server with access logs
-CMD ["uv", "run", "granian", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--interface", "asgi", \
-     "--access-log", \
-     "--log-level", "info", \
-     "src.ai_classifier.main:app"]
+# Use $PORT from Railway if available, default to 8000
+CMD ["sh", "-c", "uv run granian --host 0.0.0.0 --port ${PORT:-8000} --interface asgi --access-log --log-level info src.ai_classifier.main:app"]
